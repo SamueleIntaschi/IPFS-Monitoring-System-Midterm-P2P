@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+    <head lang="en">
+        <meta charset="UTF-8">
+        <title>IPFS Dashboard</title>
+    </head>
+    <body>
+        <h2>Downloading file: {{file_cid}}</h2>
+        <div class="container">
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="chart" id="bargraph">
+                        <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+                        <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.6/d3.min.js"></script>
+                        <script>
+                            function myFunction(item, index) {
+                                //var newDiv = document.createElement("div");
+                                //newDiv.setAttribute("id","bargraph"+index)
+                                //var currentDiv = document.getElementById("bargraph");
+                                //currentDiv.appendChild(newDiv);
+                                var graph = JSON.parse(item);
+                                var id = "";
+                                if (graph[0].name === "Bytes received") {
+                                    id = "bargraph-bytes-received";
+                                }
+                                else if (graph[0].name === "Exchanged blocks") {
+                                    id = "bargraph-exchanged-blocks";
+                                }
+                                Plotly.react(id,graph,{});
+                            }
+                            setInterval(function() {
+                                var xmlHttp = new XMLHttpRequest();
+                                xmlHttp.open( "GET", 'http://127.0.0.1:5000/plots', false ); // false for synchronous request
+                                xmlHttp.send( null );
+                                var params = JSON.parse(xmlHttp.responseText);
+                                params.forEach(myFunction);
+                            }, 5000);
+                            
+                        </script>
+                        <h3>Bytes received</h3>
+                        <div id="bargraph-bytes-received" class="chart"></div>
+                        <h3>Blocks exchanged</h3>
+                        <div id="bargraph-exchanged-blocks" class="chart"></div>                        
+                    </div>
+                </div>
+            </div>
+        </div>
+        <a href="/">Return to home page</a>
+    </body>
+</html>
