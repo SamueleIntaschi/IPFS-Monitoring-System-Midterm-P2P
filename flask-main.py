@@ -15,10 +15,13 @@ import signal
 import sys
 import ndjson
 import plotly.express as px
+import urllib
+
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'ANOTHER ONE'
 known_peers = []
+collaborating_peers = []
 
 def signal_handler(sig, frame):
     print('Clean and stop')
@@ -39,27 +42,44 @@ def get_file(file_cid):
     res = requests.post(url)
     print(res.text)
 
-def compute_peer_metrics(peer, known_peers):
+def compute_peer_metrics(peer):
     '''
     Check if a peer is already known by the system and in that case check if that peer has sent more data, then compute the values.
-    If the peer is already known and has not sent more data ignire it.
+    If the peer is already known and has not sent more data ignore it.
     '''
-    for p in known_peers:
-        #If something has changed in known peers means that the peer has sent more data
+    found = False
+    for p in collaborating_peers:
+        #Update the existing peer
         if (peer['Peer'] == p['Peer']):
-            #if ((peer['Bytes_sent'] > p['Bytes_sent']) or (peer['Bytes_received'] > p['Bytes_received']) or (peer['Value'] != p['Value'])):
-            if peer['Exchanged'] > p['Exchanged']:
-                info = {
-                    'Peer':p['Peer'],
-                    'Bytes_sent':peer['Bytes_sent'] - p['Bytes_sent'],
-                    'Bytes_received':peer['Bytes_received'] - p['Bytes_received'],
-                    'Value':peer['Value'],
-                    'Exchanged':peer['Exchanged'] - p['Exchanged']
-                }
-                return info
-            else:
-                return None
-    return peer
+            p['Bytes_received'] = peer['Bytes_received']
+            p['Bytes_sent'] = peer['Bytes_sent']
+            p['Exchanged'] = peer['Exchanged']
+            found = True
+    #If the peer is not in the collaborating peers, search it in the previously known peers
+    if found == False:
+        for p in known_peers:
+            #If something has changed in known peers means that the peer has sent more data
+            if (peer['Peer'] == p['Peer']):
+                #if ((peer['Bytes_sent'] > p['Bytes_sent']) or (peer['Bytes_received'] > p['Bytes_received']) or (peer['Value'] != p['Value'])):
+                if peer['Exchanged'] > p['Exchanged']:
+                    found = True
+                    country, ip = who_is_peer(p['Peer'])
+                    info = {
+                        'Peer':p['Peer'],
+                        'Bytes_sent':peer['Bytes_sent'] - p['Bytes_sent'],
+                        'Bytes_received':peer['Bytes_received'] - p['Bytes_received'],
+                        'Value':peer['Value'],
+                        'Exchanged':peer['Exchanged'] - p['Exchanged'],
+                        'IP_address':ip,
+                        'Country':country
+                    }
+    #If it is the first time that we encounter the peer, add it to the collaborating peers
+    if found == False:
+        country, ip = who_is_peer(peer['Peer'])
+        peer['IP_address'] = ip
+        peer['Country'] = country
+        collaborating_peers.append(peer)
+
 
 
 def check_known_peers():
@@ -68,6 +88,8 @@ def check_known_peers():
     '''
     #Reset known peers
     known_peers = []
+    #Reset collaborating peers
+    collaborating_peers = []
     res =  requests.post('http://127.0.0.1:5001/api/v0/bitswap/stat')
     peers = res.json()['Peers']
     collaborating_peers = []
@@ -90,7 +112,23 @@ def check_known_peers():
         print(elem)
     return collaborating_peers
 
+def clean_ip_addresses(ips):
+    '''
+    Remove the addresses that are probably private and the duplicates
+    '''
+    ip_addrs = []
+    for ip in ips:
+        ip_addr = ip.split('/')[2]
+        if(ip_addr[0:3] != '127' and ip_addr[0:3] != '192' and ip_addr[0:3] != '::1' 
+            and (ip_addr[0:2] != '2' and ip_addr[4] != ':') and ip_addr[0:2] != '10' and ip_addr[0:3] != '172'):
+            if (ip_addr) not in ip_addrs:
+                ip_addrs.append(ip_addr)
+    return ip_addrs
+
 def who_is_peer(peer):
+    '''
+    Search the multiaddresses of a peer and his country
+    '''
     url = 'http://127.0.0.1:5001/api/v0/dht/findpeer?arg='+str(peer)
     restmp = requests.post(url)
     results = restmp.json(cls=ndjson.Decoder)
@@ -99,16 +137,28 @@ def who_is_peer(peer):
         if responses is not None:
             for res in responses:
                 addrs = res['Addrs']
-                for addr in addrs:
-                    print(addr)
+                ip_addrs = clean_ip_addresses(addrs)
+                if len(ip_addrs) == 1:
+                    ip = ip_addrs[0]
+                    url = "http://api.hostip.info/get_html.php?ip=" + ip + "&position=true"
+                    res = requests.get(url)
+                    text = res.text
+                    txt = text.split('\n')
+                    country = txt[0].split(' ')[1]
+                    #TODO: controllare spazi nel nome della country
+                    if country != '(Unknown':
+                        return (country, ip)
+                    else:
+                        return ('Unknown Country', ip)
+    return (None, None)
 
+                    
 def check_collaborating_peers():
     '''
     Check the peers who are collaborating with my node to download the file
     '''
     res =  requests.post('http://127.0.0.1:5001/api/v0/bitswap/stat')
     peers = res.json()['Peers']
-    collaborating_peers = []
     for peer in peers:
         #Query the bitswap agent for the ledger for peer informations
         url = 'http://127.0.0.1:5001/api/v0/bitswap/ledger?arg='+str(peer)
@@ -122,10 +172,7 @@ def check_collaborating_peers():
                 'Value':peer_infos['Value'],
                 'Exchanged':peer_infos['Exchanged']
             }
-            peer_to_add = compute_peer_metrics(info, known_peers)
-            if peer_to_add is not None:
-                collaborating_peers.append(peer_to_add)
-                who_is_peer(peer)
+            compute_peer_metrics(info)
     print('Collaborating peers:')
     for elem in collaborating_peers:
         print(elem)
@@ -136,7 +183,7 @@ def create_plot(peers):
     bytes_received = []
     exchanged_blocks = []
     for p in peers:
-        peer_ids.append(p['Peer'])
+        peer_ids.append(p['IP_address'])
         bytes_received.append(p['Bytes_received'])
         exchanged_blocks.append(p['Exchanged'])
     data_dict = dict()
@@ -159,6 +206,41 @@ def create_plot(peers):
         name = 'Exchanged blocks',
         marker = dict(color = 'rgba(255, 255, 128, 0.5)', line=dict(color='rgb(0,0,0)',width=1.5))
     )
+    countries = dict()
+    for peer in peers:
+        country = peer['Country']
+        if country in countries:
+            countries[country] = countries[country] + 1
+        else:
+            countries[country] = 1
+    #TODO: creare un dizionario in modo tale da poter essere usato con scatter geo, possibilmente tenerlo aggiornato
+    print(countries)
+    #Bubble map countries
+    dfmap = pd.DataFrame.from_dict(countries)
+    print(dfmap)
+    '''
+    maps = go.Scattergeo(
+        locationmode = 'country names',
+            locations = df["Countries"],
+            text = df['Peers'],
+            mode = 'markers',
+            marker = dict(
+                size = df['Peers'] * (200 / df['Peers'].max()),
+                opacity = 0.8,
+                reversescale = False,
+                autocolorscale = False,
+                line = dict(
+                    width=1,
+                    color='rgba(102, 102, 102)'
+                ),
+                colorscale = [[0, 'rgb(253, 174, 107)'], [0.5, 'rgb(241, 105, 19)'], [1.0, 'rgb(166, 54, 3)']],
+                cmin = 0,
+                color = df['Peers'],
+                cmax = df['Peers'].max(),
+                colorbar_title="N° peers"
+            ))
+    )
+    '''
     data1 = [trace1]
     data1j = json.dumps(data1, cls=plotly.utils.PlotlyJSONEncoder)
     data2 = [trace2]
