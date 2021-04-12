@@ -1,11 +1,13 @@
 <!DOCTYPE html>
-<html>
+<html style="background-color: lightblue;">
     <head lang="en">
         <meta charset="UTF-8">
         <title>IPFS Dashboard</title>
     </head>
-    <body>
-        <h2>Downloading file: {{file_cid}}</h2>
+    <body style="font-family: 'Lucida Sans', 'Lucida Sans Regular', 'Lucida Grande', 'Lucida Sans Unicode', Geneva, Verdana, sans-serif;
+                 text-align:center">
+        <h2 id="title">Downloading file: {{file_cid}}</h2>
+        <a id="return-button" style="display:none" href="/">Download another file</a>
         <div class="container">
             <div class="row">
                 <div class="col-md-6">
@@ -13,6 +15,7 @@
                         <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
                         <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.6/d3.min.js"></script>
                         <script>
+
                             function myFunction(item, index) {
                                 //var newDiv = document.createElement("div");
                                 //newDiv.setAttribute("id","bargraph"+index)
@@ -26,25 +29,53 @@
                                 else if (graph[0].name === "Exchanged blocks") {
                                     id = "bargraph-exchanged-blocks";
                                 }
+                                else if (graph[0].name === "Map") {
+                                    id = "peer-map"
+                                }
+                                loadId = "loading-" + id;
+                                document.getElementById(loadId).style.display = "none";
                                 Plotly.react(id,graph,{});
                             }
-                            setInterval(function() {
+                            
+                            var timer = setInterval(function() {
                                 var xmlHttp = new XMLHttpRequest();
-                                xmlHttp.open( "GET", 'http://127.0.0.1:5000/plots', false ); // false for synchronous request
-                                xmlHttp.send( null );
-                                var params = JSON.parse(xmlHttp.responseText);
-                                params.forEach(myFunction);
-                            }, 10000);
+                                xmlHttp.open( "GET", 'http://127.0.0.1:5000/file', false); // false for synchronous request
+                                xmlHttp.send(null);
+                                var file_downloaded = JSON.parse(xmlHttp.responseText);
+                                if (file_downloaded == 0) {
+                                    location.replace('http://127.0.0.1:5000/');
+                                }
+                                else if (file_downloaded == 2) {
+                                    var title = document.getElementById("title");
+                                    title.innerHTML = "Your file is downloaded!";
+                                    document.getElementById("return-button").style.display = "block";
+                                    xmlHttp.open( "GET", 'http://127.0.0.1:5000/plots', false); // false for synchronous request
+                                    xmlHttp.send(null);
+                                    var params = JSON.parse(xmlHttp.responseText);
+                                    params.forEach(myFunction);
+                                    clearInterval(timer)
+                                }
+                                else {
+                                    xmlHttp.open( "GET", 'http://127.0.0.1:5000/plots', false); // false for synchronous request
+                                    xmlHttp.send(null);
+                                    var params = JSON.parse(xmlHttp.responseText);
+                                    params.forEach(myFunction);
+                                }
+                            }, 20000);
                             
                         </script>
                         <h3>Bytes received</h3>
+                        <p id="loading-bargraph-bytes-received">Loading graph...</p>
                         <div id="bargraph-bytes-received" class="chart"></div>
                         <h3>Blocks exchanged</h3>
-                        <div id="bargraph-exchanged-blocks" class="chart"></div>                        
+                        <p id="loading-bargraph-exchanged-blocks">Loading graph...</p>
+                        <div id="bargraph-exchanged-blocks" class="chart"></div>
+                        <h3>Map</h3> 
+                        <p id="loading-peer-map">Loading graph...</p>
+                        <div id="peer-map" class="map"></div>
                     </div>
                 </div>
             </div>
         </div>
-        <a href="/">Return to home page</a>
     </body>
 </html>

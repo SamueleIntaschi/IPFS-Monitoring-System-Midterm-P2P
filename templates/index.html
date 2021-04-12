@@ -1,15 +1,18 @@
 <!DOCTYPE html>
-<html>
+<html style="background-color: lightblue;">
 <head lang="en">
     <meta charset="UTF-8">
     <title>IPFS Dashboard</title>
 </head>
-<body>
+<body style="font-family: 'Lucida Sans', 'Lucida Sans Regular', 'Lucida Grande', 'Lucida Sans Unicode', Geneva, Verdana, sans-serif;
+             text-align:center;
+             font-weight: bold;">
     <form action="" method="POST">
         {{ form.hidden_tag() }}
         <dl>
             {% for field in form.display %}
             <dt>{{ form[field].label }}</dt>
+            <br>
             <dd>{{ form[field]() }}</dd>
               {% if form[field].errors %}
                  {% for e in form[field].errors %}
@@ -18,6 +21,7 @@
               {% endif %}
             {% endfor %}
         </dl>
+        <br>
         <input type=submit value="Download">
     </form>
 </body>
