@@ -12,12 +12,24 @@ import json
 import signal
 import sys
 import ndjson
-import plotly.express as px
+import datetime
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'ANOTHER ONE'
 known_peers = []
 collaborating_peers = []
+peers_number = dict()
+peers_number = {
+    'n_peers':[],
+    'times':[],
+    'c_peers':[]
+}
+bw = dict()
+bw = {
+    'actual_in':[],
+    'avg_in':[],
+    'times':[]
+}
 #file_downloaded = 
 # 0 if no file is in downloading
 # 1 if the file is in downloading
@@ -43,7 +55,7 @@ def get_file(file_cid):
     #Save the current state of the known peers
     check_known_peers()
     print("Trying to download "+file_cid )
-    url = 'http://127.0.0.1:5001/api/v0/get?arg=' + str(file_cid) + '&output=.'
+    url = 'http://127.0.0.1:5001/api/v0/get?arg=' + str(file_cid)
     res = requests.post(url)
     if res.status_code == 200:
         file_downloaded = 2
@@ -99,10 +111,24 @@ def check_known_peers():
     '''
     global known_peers
     global collaborating_peers
+    global peers_number
+    global bw
     #Reset known peers
     known_peers = []
     #Reset collaborating peers
     collaborating_peers = []
+    #Reset number of peers
+    peers_number = {
+        'n_peers':[],
+        'times':[],
+        'c_peers':[]
+    }
+    #Reset bandwidth
+    bw = {
+        'actual_in':[],
+        'avg_in':[],
+        'times':[]
+    }
     res =  requests.post('http://127.0.0.1:5001/api/v0/bitswap/stat')
     peers = res.json()['Peers']
     for peer in peers:
@@ -123,18 +149,69 @@ def check_known_peers():
     for elem in known_peers:
         print(elem)
 
+def check_collaborating_peers():
+    '''
+    Check the peers who are collaborating with my node to download the file
+    '''
+    global peers_number
+    #Get all the partners
+    res =  requests.post('http://127.0.0.1:5001/api/v0/bitswap/stat')
+    peers = res.json()['Peers']
+    peers_number['n_peers'].append(len(peers))
+    now = datetime.datetime.now()
+    peers_number['times'].append(str(now.hour) + ':' + str(now.minute) + ':' + str(now.second))
+    for peer in peers:
+        #Query the bitswap agent for the ledger for peer informations
+        url = 'http://127.0.0.1:5001/api/v0/bitswap/ledger?arg='+str(peer)
+        restmp = requests.post(url)
+        peer_infos = restmp.json()
+        if (peer_infos['Exchanged'] > 0):
+            info = {
+                'Peer':peer_infos['Peer'],
+                'Bytes_sent':peer_infos['Sent'],
+                'Bytes_received':peer_infos['Recv'],
+                'Value':peer_infos['Value'],
+                'Exchanged':peer_infos['Exchanged']
+            }
+            compute_peer_metrics(info)
+    peers_number['c_peers'].append(len(collaborating_peers))
+    print('Collaborating peers:')
+    for elem in collaborating_peers:
+        print(elem)
+
 def clean_ip_addresses(ips):
     '''
     Remove the addresses that are probably private and the duplicates
     '''
     ip_addrs = []
     for ip in ips:
-        ip_addr = ip.split('/')[2]
-        if(ip_addr[0:3] != '127' and ip_addr[0:3] != '192' and ip_addr[0:3] != '::1' 
-            and (ip_addr[0:2] != '2' and ip_addr[4] != ':') and ip_addr[0:2] != '10' and ip_addr[0:3] != '172'):
-            if (ip_addr) not in ip_addrs:
-                ip_addrs.append(ip_addr)
+        ip_parts = ip.split('/')
+        ip_type = ip_parts[1]
+        if ip_type == 'ip4':
+            ip_addr = ip.split('/')[2]
+            if(ip_addr[0:9] != '127.0.0.1' and ip_addr[0:7] != '192.168' and ip_addr[0:2] != '10' and ip_addr[0:6] != '172.31'):
+                if (ip_addr) not in ip_addrs:
+                    ip_addrs.append(ip_addr)
     return ip_addrs
+
+def get_bandwidth():
+    '''
+    Save the actual bandwidth value and compute the average bandwidth
+    '''
+    global bw
+    url = 'http://127.0.0.1:5001/api/v0/stats/bw'
+    res = requests.post(url)
+    r = res.json()
+    now = datetime.datetime.now()
+    rate_in = r['RateIn']
+    bw['actual_in'].append(rate_in)
+    bw['times'].append(str(now.hour) + ':' + str(now.minute) + ':' + str(now.second))
+    n_val = len(bw['avg_in'])
+    if n_val == 0:
+        new_avg = rate_in
+    else:
+        new_avg = ((bw['avg_in'][n_val - 1] * n_val) + rate_in) / (n_val + 1)
+    bw['avg_in'].append(new_avg)        
 
 def who_is_peer(peer):
     '''
@@ -165,44 +242,46 @@ def who_is_peer(peer):
                         return ('Unknown Country', ip)
     return (None, None)
 
-                    
-def check_collaborating_peers():
-    '''
-    Check the peers who are collaborating with my node to download the file
-    '''
-    #Get all the partners
-    res =  requests.post('http://127.0.0.1:5001/api/v0/bitswap/stat')
-    peers = res.json()['Peers']
-    for peer in peers:
-        #Query the bitswap agent for the ledger for peer informations
-        url = 'http://127.0.0.1:5001/api/v0/bitswap/ledger?arg='+str(peer)
-        restmp = requests.post(url)
-        peer_infos = restmp.json()
-        if (peer_infos['Exchanged'] > 0):
-            info = {
-                'Peer':peer_infos['Peer'],
-                'Bytes_sent':peer_infos['Sent'],
-                'Bytes_received':peer_infos['Recv'],
-                'Value':peer_infos['Value'],
-                'Exchanged':peer_infos['Exchanged']
-            }
-            compute_peer_metrics(info)
-    print('Collaborating peers:')
-    for elem in collaborating_peers:
-        print(elem)
-
 def create_plot():
     '''
     Create the plots and return the json of them
     '''
+    #Create the bandwidth plot
+    get_bandwidth()
+    df = pd.DataFrame.from_dict(bw)
+    bw_peers = go.Scatter(
+        y = df['actual_in'],
+        x = df['times'],
+        name = "Actual incoming bandwidth"
+    )
+    avg_bw_peers = go.Scatter(
+        y = df['avg_in'],
+        x = df['times'],
+        name = "Average incoming bandwidth"
+    )
     #Update the list of collaborating peers
     check_collaborating_peers()
+    #Create a plot for the number of bitswap partners (total and collaborating)
+    df = pd.DataFrame.from_dict(peers_number)
+    #Line for total partners
+    n_peers = go.Scatter(
+        x = df['times'],
+        y = df['n_peers'],
+        name = "Total peers"
+    )
+    #Line for collaborating partners
+    c_peers = go.Scatter(
+        x = df['times'],
+        y = df['c_peers'],
+        name = "Collaborating peers"
+    )
+    #Create plots for bytes received and exchanged blocks
     peer_ids = []
     bytes_received = []
     exchanged_blocks = []
     peers = collaborating_peers
     for p in peers:
-        peer_ids.append(p['IP_address'])
+        peer_ids.append(p['Peer'])
         bytes_received.append(p['Bytes_received'])
         exchanged_blocks.append(p['Exchanged'])
     data_dict = dict()
@@ -212,19 +291,19 @@ def create_plot():
         'Exchanged_blocks':exchanged_blocks
     }
     df = pd.DataFrame.from_dict(data_dict)
-    #df = pd.DataFrame({'x': x, 'y': y}) # creating a sample dataframe
-    trace1 = go.Bar(
+    bytes_received = go.Bar(
         x = df['Peer_ids'],
         y = df['Bytes_received'],
         name = 'Bytes received',
         marker = dict(color = 'rgba(255, 174, 255, 0.5)', line=dict(color='rgb(0,0,0)',width=1.5))
     )
-    trace2 = go.Bar(
+    exchanges = go.Bar(
         x = df['Peer_ids'],
         y = df['Exchanged_blocks'],
         name = 'Exchanged blocks',
         marker = dict(color = 'rgba(255, 255, 128, 0.5)', line=dict(color='rgb(0,0,0)',width=1.5))
     )
+    #Create a map with the IP addresses location
     countries = dict()
     #Count peers for country
     for peer in peers:
@@ -257,20 +336,26 @@ def create_plot():
                 width=1,
                 color='rgba(102, 102, 102)'
             ),
-            colorscale = [[0, 'rgb(253, 174, 107)'], [0.5, 'rgb(241, 105, 19)'], [1.0, 'rgb(166, 54, 3)']],
+            #colorscale = [[0, 'rgb(253, 174, 107)'], [0.5, 'rgb(241, 105, 19)'], [1.0, 'rgb(166, 54, 3)']],
+            colorscale = 'blugrn',
             cmin = 0,
             color = dfmap['Peers'],
             cmax = dfmap['Peers'].max(),
-            colorbar_title="N° peers"
+            colorbar_title="Number of peers"
         )
     )
-    data1 = [trace1]
+    #Create the json of the plots
+    data1 = [bytes_received]
     data1j = json.dumps(data1, cls=plotly.utils.PlotlyJSONEncoder)
-    data2 = [trace2]
+    data2 = [exchanges]
     data2j = json.dumps(data2, cls=plotly.utils.PlotlyJSONEncoder)
     data3 = [maps]
     data3j = json.dumps(data3, cls=plotly.utils.PlotlyJSONEncoder)
-    array = [data1j, data2j, data3j]
+    data4 = [n_peers, c_peers]
+    data4j = json.dumps(data4, cls=plotly.utils.PlotlyJSONEncoder)
+    data5 = [bw_peers, avg_bw_peers]
+    data5j = json.dumps(data5, cls=plotly.utils.PlotlyJSONEncoder)
+    array = [data1j, data2j, data3j, data4j, data5j]
     return array
 
 @app.route('/', methods=['GET','POST'])
@@ -303,7 +388,7 @@ def update_plot():
 @app.route('/file')
 def file_info():
     '''
-    Communicates the state of the file download
+    Communicates the state of the file's download
     '''
     return json.dumps(file_downloaded)
 
