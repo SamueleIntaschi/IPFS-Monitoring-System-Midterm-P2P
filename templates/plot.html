@@ -2,53 +2,30 @@
 <html style="background-color: lightblue;">
     <head lang="en">
         <meta charset="UTF-8">
-        <title>IPFS Dashboard</title>
+        <title>IPFS-Bitswap Monitoring System</title>
     </head>
     <body style="font-family: 'Lucida Sans', 'Lucida Sans Regular', 'Lucida Grande', 'Lucida Sans Unicode', Geneva, Verdana, sans-serif;
                  text-align:center">
+
+        <h1>IPFS-Bitswap Monitoring System</h1>
+        
         <h2 id="title">Downloading content: {{file_cid}}</h2>
         <a id="return-button" style="display:none" href="/">Download another file</a>
         <div class="container">
             <div class="row">
                 <div class="col-md-6">
                     <div class="chart" id="bargraph">
+
+                        <!--SCRIPT TO UPDATE PERIODICALLY THE GRAPHS-->
+
                         <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
                         <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.6/d3.min.js"></script>
                         <script>
-                            //First check after five seconds, to ensure that the download starts
-                            setTimeout(function() {
-                                var xmlHttp = new XMLHttpRequest();
-                                xmlHttp.open( "GET", 'http://127.0.0.1:5000/file', false); // false for synchronous request
-                                xmlHttp.send(null);
-                                var file_downloaded = JSON.parse(xmlHttp.responseText);
-                                if (file_downloaded == 0) {
-                                    location.replace('http://127.0.0.1:5000/');
-                                }
-                                else if (file_downloaded == 2) {
-                                    var title = document.getElementById("title");
-                                    title.innerHTML = "Your file is downloaded!";
-                                    document.getElementById("return-button").style.display = "block";
-                                    xmlHttp.open( "GET", 'http://127.0.0.1:5000/plots', false); // false for synchronous request
-                                    xmlHttp.send(null);
-                                    var params = JSON.parse(xmlHttp.responseText);
-                                    params.forEach(myFunction);
-                                    clearInterval(timer)
-                                }
-                                else {
-                                    xmlHttp.open( "GET", 'http://127.0.0.1:5000/plots', false); // false for synchronous request
-                                    xmlHttp.send(null);
-                                    var params = JSON.parse(xmlHttp.responseText);
-                                    params.forEach(myFunction);
-                                }
-                            }, 10000);
 
                             //Receive the graphs in json and show them
                             function myFunction(item, index) {
-                                //var newDiv = document.createElement("div");
-                                //newDiv.setAttribute("id","bargraph"+index)
-                                //var currentDiv = document.getElementById("bargraph");
-                                //currentDiv.appendChild(newDiv);
                                 var graph = JSON.parse(item);
+                                //Hiding the corresponding loading message
                                 var id = "";
                                 if (graph[0].name === "Bytes received") {
                                     id = "bargraph-bytes-received";
@@ -67,18 +44,22 @@
                                 }
                                 loadId = "loading-" + id;
                                 document.getElementById(loadId).style.display = "none";
+                                //Showing the graph
                                 Plotly.react(id,graph,{});
                             }
                             
-                            //Periodically redresh the graphs
-                            var timer = setInterval(function() {
+                            //First checking after 5 seconds, to make sure the download has started
+                            setTimeout(function() {
                                 var xmlHttp = new XMLHttpRequest();
+                                //Sending a request to get the state of the content's download
                                 xmlHttp.open( "GET", 'http://127.0.0.1:5000/file', false); // false for synchronous request
                                 xmlHttp.send(null);
                                 var file_downloaded = JSON.parse(xmlHttp.responseText);
+                                //If there is not a file in download, redirecting to home page
                                 if (file_downloaded == 0) {
                                     location.replace('http://127.0.0.1:5000/');
                                 }
+                                //If the download has finished, making the last update and then stop
                                 else if (file_downloaded == 2) {
                                     var title = document.getElementById("title");
                                     title.innerHTML = "Your file is downloaded!";
@@ -89,30 +70,72 @@
                                     params.forEach(myFunction);
                                     clearInterval(timer)
                                 }
+                                //If a file is being downloaded, sending a request for the graphs to show, then update them
                                 else {
+                                    xmlHttp.open( "GET", 'http://127.0.0.1:5000/plots', false);
+                                    xmlHttp.send(null);
+                                    var params = JSON.parse(xmlHttp.responseText);
+                                    //For each graph calling the function that show it
+                                    params.forEach(myFunction);
+                                }
+                            }, 5000);
+                            
+                            //Refreshing the graphs every 20 seconds
+                            var timer = setInterval(function() {
+                                //Sending a request to get the state of the content's download
+                                var xmlHttp = new XMLHttpRequest();
+                                xmlHttp.open( "GET", 'http://127.0.0.1:5000/file', false); // false for synchronous request
+                                xmlHttp.send(null);
+                                var file_downloaded = JSON.parse(xmlHttp.responseText);
+                                //If there is not a file in download, redirecting to home page
+                                if (file_downloaded == 0) {
+                                    location.replace('http://127.0.0.1:5000/');
+                                }
+                                //If the download has finished, making the last update and then stop
+                                else if (file_downloaded == 2) {
+                                    var title = document.getElementById("title");
+                                    title.innerHTML = "Your file is downloaded!";
+                                    document.getElementById("return-button").style.display = "block";
                                     xmlHttp.open( "GET", 'http://127.0.0.1:5000/plots', false); // false for synchronous request
                                     xmlHttp.send(null);
                                     var params = JSON.parse(xmlHttp.responseText);
+                                    params.forEach(myFunction);
+                                    clearInterval(timer)
+                                }
+                                //If a file is being downloaded, sending a request for the graphs to show, then update them
+                                else {
+                                    xmlHttp.open( "GET", 'http://127.0.0.1:5000/plots', false);
+                                    xmlHttp.send(null);
+                                    var params = JSON.parse(xmlHttp.responseText);
+                                    //For each graph calling the function that show it
                                     params.forEach(myFunction);
                                 }
                             }, 20000);
                             
                         </script>
-                        <h3>Bytes received</h3>
+
+                        <!--GRAPHS-->
+
+                        <h3>Bytes Received</h3>
                         <p id="loading-bargraph-bytes-received">Loading graph...</p>
                         <div id="bargraph-bytes-received" class="chart"></div>
-                        <h3>Blocks exchanged</h3>
+
+                        <h3>Blocks Exchanged</h3>
                         <p id="loading-bargraph-exchanged-blocks">Loading graph...</p>
                         <div id="bargraph-exchanged-blocks" class="chart"></div>
-                        <h3>Map</h3> 
+
+                        <h3>Geographical Distribution of the Peers</h3> 
                         <p id="loading-peer-map">Loading graph...</p>
                         <div id="peer-map" class="map"></div>
-                        <h3>Number of bitswap partners</h3> 
-                        <p id="loading-peer-number">Loading graph...</p>
-                        <div id="peer-number" class="chart"></div>
+
                         <h3>Bandwidth</h3> 
                         <p id="loading-bw">Loading graph...</p>
                         <div id="bw" class="chart"></div>
+                        
+                        <h3>Number of Bitswap Partners</h3> 
+                        <p id="loading-peer-number">Loading graph...</p>
+                        <div id="peer-number" class="chart"></div>
+
                     </div>
                 </div>
             </div>

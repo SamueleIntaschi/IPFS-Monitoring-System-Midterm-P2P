@@ -1,4 +1,3 @@
-  
 from flask_wtf import FlaskForm
 import wtforms as f
 from wtforms import Form, BooleanField
